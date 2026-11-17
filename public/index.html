@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCMS – Metro Card Management System</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--ink:#16202e;--mute:#5d6b7e;--line:#dde3ec;--brand:#0b5fff;--ok:#127a46;--bad:#b3261e;--warn:#9a6700}
+@media(prefers-color-scheme:dark){:root{--bg:#10151d;--card:#18202b;--ink:#e8edf4;--mute:#97a4b6;--line:#2a3544;--brand:#5b9bff;--ok:#4cc38a;--bad:#ff7b72;--warn:#e3b341}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;padding:.8rem 1.2rem;background:var(--card);border-bottom:1px solid var(--line)}
+header b{font-size:1.1rem}main{max-width:1000px;margin:1rem auto;padding:0 1rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem;margin-bottom:1rem}
+h2,h3{margin:.1rem 0 .7rem}nav{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
+button,select,input{font:inherit;padding:.5rem .7rem;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+button{cursor:pointer}button.p{background:var(--brand);color:#fff;border-color:var(--brand)}button.on{border-color:var(--brand);color:var(--brand);font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}.row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end}
+label{display:flex;flex-direction:column;gap:.2rem;font-size:.85rem;color:var(--mute)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:.45rem .5rem;border-bottom:1px solid var(--line)}th{font-size:.8rem;color:var(--mute)}
+.tw{overflow-x:auto}.bal{font-size:2rem;font-weight:700}.badge{padding:.1rem .55rem;border-radius:99px;font-size:.78rem;border:1px solid currentColor}
+.ACTIVE,.SUCCESS{color:var(--ok)}.BLOCKED,.FAILED,.DISABLED,.EXPIRED{color:var(--bad)}.PENDING,.ISSUED,.REQUESTED{color:var(--warn)}
+.msg{padding:.6rem .8rem;border-radius:8px;margin:.6rem 0;border:1px solid var(--line)}.msg.e{color:var(--bad);border-color:var(--bad)}.msg.s{color:var(--ok);border-color:var(--ok)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.7rem}.stat{border:1px solid var(--line);border-radius:10px;padding:.7rem}.stat b{display:block;font-size:1.3rem}
+.tile{cursor:pointer;border:2px solid var(--line);border-radius:10px;padding:.6rem .8rem}.tile.sel{border-color:var(--brand)}.note{color:var(--mute);font-size:.85rem}
+</style></head><body>
+<header><b>🚇 MCMS <span class="note">Metro Card Management · academic prototype · mock payments</span></b><div id="who"></div></header>
+<main id="app"></main>
+<script>
+const h=(t,a={},...c)=>{const e=document.createElement(t);for(const[k,v]of Object.entries(a)){if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else if(k==='class')e.className=v;else if(v!==false&&v!=null)e.setAttribute(k,v===true?'':v)}e.append(...c.flat().filter(x=>x!=null&&x!==false));return e};
+const $app=document.getElementById('app'),$who=document.getElementById('who');
+let token=sessionStorage.getItem('t'),me=null,tab=null;
+async function api(m,p,body,hd={}){const r=await fetch(p,{method:m,headers:{'content-type':'application/json',...(token&&{authorization:'Bearer '+token}),...hd},body:body&&JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(r.status===401&&token&&p!=='/api/auth/login'){logout();}if(!r.ok)throw new Error(j.error||'Request failed');return j}
+const msg=(el,text,ok)=>{el.replaceChildren(h('div',{class:'msg '+(ok?'s':'e'),role:'status'},text))};
+const badge=s=>h('span',{class:'badge '+s},s);
+const table=(heads,rows)=>h('div',{class:'tw'},h('table',{},h('thead',{},h('tr',{},heads.map(x=>h('th',{},x)))),h('tbody',{},rows.length?rows.map(r=>h('tr',{},r.map(c=>h('td',{},c)))):h('tr',{},h('td',{colspan:heads.length,class:'note'},'No records')))));
+const field=(l,i)=>h('label',{},l,i);
+function logout(){token=null;me=null;sessionStorage.removeItem('t');boot()}
+async function boot(){
+  $who.replaceChildren();
+  if(!token)return authView();
+  try{me=await api('GET','/api/me')}catch{return authView()}
+  $who.append(h('span',{class:'note'},me.username+' '),badge(me.role),' ',h('button',{onclick:logout},'Log out'));
+  const tabs=me.role==='PASSENGER'?{'My cards':passengerView}:{'Cards':cardsView,'Passengers':passengersView,'Record travel':travelView,...(me.role==='ADMIN'&&{'Users':usersView,'Reports':reportsView})};
+  tab=tab&&tabs[tab]?tab:Object.keys(tabs)[0];
+  const body=h('div');$app.replaceChildren(h('nav',{},Object.keys(tabs).map(k=>h('button',{class:k===tab?'on':'',onclick:()=>{tab=k;boot()}},k))),body);
+  tabs[tab](body);
+}
+function authView(){
+  const out=h('div'),f=(n,l,t='text')=>h('input',{name:n,type:t,required:true,autocomplete:'off'});
+  const login=h('form',{class:'card',onsubmit:async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));try{token=(await api('POST','/api/auth/login',d)).token;sessionStorage.setItem('t',token);boot()}catch(x){msg(out,x.message)}}},
+    h('h2',{},'Log in'),h('div',{class:'row'},field('Email',f('username')),field('Password',f('password','password')),h('button',{class:'p'},'Log in')),
+    h('p',{class:'note'},'Demo: asha@mcms.test / Passenger@123 · staff@mcms.test / Staff@123 · admin@mcms.test / Admin@123'));
+  const reg=h('form',{class:'card',onsubmit:async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.age=Number(d.age);try{token=(await api('POST','/api/auth/register',d)).token;sessionStorage.setItem('t',token);boot()}catch(x){msg(out,x.message)}}},
+    h('h2',{},'New passenger? Register'),h('div',{class:'row'},field('Name',f('name')),field('Age',f('age','number')),field('Address',f('address')),field('Contact no.',f('contactNo')),field('Email',f('email','email')),field('Password (8+)',f('password','password')),h('button',{},'Register')));
+  $app.replaceChildren(out,login,reg)
+}
+// ---------- Passenger
+async function passengerView(root){
+  const cards=await api('GET','/api/cards');let sel=cards[0]?.cardId;const box=h('div');root.append(box);
+  async function draw(){
+    const c=cards.find(x=>x.cardId===sel);
+    const tiles=h('div',{class:'row'},cards.map(x=>h('div',{class:'tile'+(x.cardId===sel?' sel':''),tabindex:0,onclick:()=>{sel=x.cardId;draw()}},h('b',{},x.cardId),h('br'),badge(x.status))));
+    if(!c){box.replaceChildren(h('div',{class:'card'},'You have no card yet. Visit a station counter to be issued one.'));return}
+    const [rc,tr]=await Promise.all([api('GET',`/api/cards/${c.cardId}/recharges?limit=10`),api('GET',`/api/cards/${c.cardId}/transactions?limit=10`)]);
+    const out=h('div');let key=null,busy=false;
+    const amt=h('input',{type:'number',step:'0.01',placeholder:'e.g. 500',required:true,id:'amt'});
+    const sim=me.allowSimulate?field('Mock outcome (demo only)',h('select',{id:'sim'},h('option',{value:''},'Random (90% success)'),h('option',{value:'SUCCESS'},'Force SUCCESS'),h('option',{value:'FAILED'},'Force FAILED'))):null;
+    const form=h('form',{onsubmit:async e=>{e.preventDefault();if(busy)return;busy=true;btn.disabled=true;key||=crypto.randomUUID();
+      try{const r=await api('POST',`/api/cards/${c.cardId}/recharges`,{amount:amt.value,simulate:document.getElementById('sim')?.value||undefined},{'Idempotency-Key':key});key=null;
+        const ok=r.recharge.status==='SUCCESS';c.balance=r.balance;await draw();msg(document.getElementById('res'),ok?`Recharge successful. New balance ₹${r.balance}.`:`Payment failed. Balance unchanged (₹${r.balance}).`,ok)}
+      catch(x){msg(out,x.message)}finally{busy=false;btn.disabled=false}}},
+      h('div',{class:'row'},field('Amount (₹)',amt),sim,(btn=h('button',{class:'p'},'Recharge'))));
+    var btn;
+    box.replaceChildren(tiles,h('div',{class:'card',style:'margin-top:1rem'},h('div',{class:'row',style:'justify-content:space-between'},h('div',{},h('div',{class:'note'},'Balance'),h('div',{class:'bal'},'₹'+c.balance)),h('div',{},badge(c.status),h('div',{class:'note'},'Issued '+c.issueDate))),
+      h('p',{},c.status==='ACTIVE'?h('button',{onclick:async()=>{if(!confirm('Block this card? Only staff can unblock it.'))return;try{await api('PATCH',`/api/cards/${c.cardId}/status`,{status:'BLOCKED'});cards.find(x=>x.cardId===sel).status='BLOCKED';draw()}catch(x){msg(out,x.message)}}},'Report lost / block card'):h('span',{class:'note'},c.status==='BLOCKED'?'Card is blocked. Contact station staff to unblock.':'Card must be ACTIVE to recharge.'))),
+      c.status==='ACTIVE'?h('div',{class:'card'},h('h3',{},'Recharge'),form,h('div',{id:'res'})):null,out,
+      h('div',{class:'card'},h('h3',{},'Recharge history'),table(['Date','Amount','Status','Reference'],rc.items.map(r=>[r.date,'₹'+r.amount,badge(r.status),r.reference||'—']))),
+      h('div',{class:'card'},h('h3',{},'Travel history'),table(['Date','From','To','Fare'],tr.items.map(t=>[t.dateTime,t.entryStation,t.exitStation,'₹'+t.fare]))))
+  }
+  draw()
+}
+// ---------- Staff / Admin
+async function cardsView(root){
+  const out=h('div'),list=h('div'),q=h('input',{placeholder:'Search card ID or passenger name'});
+  async function load(){const cs=await api('GET','/api/cards?q='+encodeURIComponent(q.value));
+    list.replaceChildren(table(['Card','Passenger','Balance','Status','Change status'],cs.map(c=>{const opts={REQUESTED:['ISSUED'],ISSUED:['ACTIVE'],ACTIVE:['BLOCKED','EXPIRED'],BLOCKED:['ACTIVE','EXPIRED'],EXPIRED:[]}[c.status];const s=h('select',{},opts.map(o=>h('option',{},o)));
+      return [c.cardId,c.passengerName+' (#'+c.passengerId+')','₹'+c.balance,badge(c.status),opts.length?h('span',{class:'row'},s,h('button',{onclick:async()=>{try{await api('PATCH',`/api/cards/${c.cardId}/status`,{status:s.value});msg(out,`${c.cardId} → ${s.value}`,true);load()}catch(x){msg(out,x.message)}}},'Apply')):'—']})))}
+  q.addEventListener('input',()=>{clearTimeout(q.t);q.t=setTimeout(load,250)});
+  root.append(h('div',{class:'card'},h('h2',{},'Cards'),q,out,list));load()
+}
+async function passengersView(root){
+  const out=h('div'),list=h('div'),q=h('input',{placeholder:'Search name, email or phone'});
+  async function load(){const ps=await api('GET','/api/passengers?q='+encodeURIComponent(q.value));
+    list.replaceChildren(table(['ID','Name','Age','Contact','Email',''],ps.map(p=>[p.passengerId,p.name,p.age,p.contactNo,p.email,h('button',{onclick:async()=>{try{const c=await api('POST','/api/cards',{passengerId:p.passengerId});msg(out,`Issued card ${c.cardId} to ${p.name} (status ISSUED – activate it in Cards).`,true)}catch(x){msg(out,x.message)}}},'Issue card')])))}
+  q.addEventListener('input',()=>{clearTimeout(q.t);q.t=setTimeout(load,250)});
+  root.append(h('div',{class:'card'},h('h2',{},'Passengers'),q,out,list));load()
+}
+async function travelView(root){
+  const st=await api('GET','/api/stations'),out=h('div');const opt=()=>st.map(s=>h('option',{value:s.stationId},s.name));
+  const f=h('form',{onsubmit:async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.entryStationId=+d.entryStationId;d.exitStationId=+d.exitStationId;try{const t=await api('POST','/api/transactions',d);msg(out,`Recorded ${t.entryStation} → ${t.exitStation}, fare ₹${t.fare} deducted.`,true)}catch(x){msg(out,x.message)}}},
+    h('div',{class:'row'},field('Card ID',h('input',{name:'cardId',required:true,placeholder:'MC10000001'})),field('Entry',h('select',{name:'entryStationId'},opt())),field('Exit',h('select',{name:'exitStationId'},opt())),field('Fare (₹)',h('input',{name:'fare',type:'number',step:'0.01',min:'0',required:true})),h('button',{class:'p'},'Record')));
+  root.append(h('div',{class:'card'},h('h2',{},'Record travel transaction'),h('p',{class:'note'},'Manual entry stands in for station gates. Card must be ACTIVE with sufficient balance; fare is deducted atomically.'),f,out))
+}
+async function usersView(root){
+  const out=h('div'),list=h('div');
+  async function load(){const us=await api('GET','/api/admin/users');list.replaceChildren(table(['ID','Username','Role','Status',''],us.map(u=>[u.userId,u.username,u.role,badge(u.status),u.userId===me.userId?'(you)':h('button',{onclick:async()=>{try{await api('PATCH',`/api/admin/users/${u.userId}/status`,{status:u.status==='ACTIVE'?'DISABLED':'ACTIVE'});load()}catch(x){msg(out,x.message)}}},u.status==='ACTIVE'?'Disable':'Enable')])))}
+  const f=h('form',{onsubmit:async e=>{e.preventDefault();try{await api('POST','/api/admin/users',Object.fromEntries(new FormData(e.target)));msg(out,'User created.',true);e.target.reset();load()}catch(x){msg(out,x.message)}}},
+    h('div',{class:'row'},field('Email / username',h('input',{name:'username',required:true})),field('Password (8+)',h('input',{name:'password',type:'password',required:true})),field('Role',h('select',{name:'role'},h('option',{},'STAFF'),h('option',{},'ADMIN'))),h('button',{},'Create staff/admin')));
+  root.append(h('div',{class:'card'},h('h2',{},'Users'),f,out,list));load()
+}
+async function reportsView(root){
+  const r=await api('GET','/api/admin/reports/summary');const s=(l,v)=>h('div',{class:'stat'},h('span',{class:'note'},l),h('b',{},v));
+  const kv=o=>Object.entries(o).map(([k,v])=>[badge(k),v]);
+  root.append(h('div',{class:'card'},h('h2',{},'Summary report'),h('div',{class:'grid'},s('Passengers',r.passengers),s('Journeys',r.journeys),s('Total recharged','₹'+r.totalRecharged),s('Fares collected','₹'+r.totalFares),s('Balance held on cards','₹'+r.totalBalanceHeld))),
+    h('div',{class:'card'},h('h3',{},'Cards by status'),table(['Status','Count'],kv(r.cardsByStatus))),h('div',{class:'card'},h('h3',{},'Recharges by payment status'),table(['Status','Count'],kv(r.rechargesByStatus))))
+}
+boot();
+</script></body></html>

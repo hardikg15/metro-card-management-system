@@ -1,0 +1,13 @@
+{
+  "name": "mcms",
+  "version": "1.0.0",
+  "description": "Metro Card Management System - academic prototype (mock payments only)",
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "seed": "node --env-file-if-exists=.env server.js --reset",
+    "test": "node --no-warnings --test test/api.test.js"
+  },
+  "dependencies": { "bcryptjs": "^2.4.3", "express": "^5.1.0", "jsonwebtoken": "^9.0.2" }
+}
